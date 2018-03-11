@@ -1,4 +1,5 @@
 # dcf_duino
+<img src="doc/dcf1.png" alt="example clock" />
 A dcf77 receiver / clock module.
 
 Uses a dcf reveiver (eg. conrad 641138), displays Information on a 20x4 LCD
