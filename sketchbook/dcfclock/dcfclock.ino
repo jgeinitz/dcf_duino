@@ -39,7 +39,7 @@
 //               12345678911234567890
 //              +--------------------+
 //              !                    !
-#define VERSION "(c) 180321 DG9DW    "
+#define VERSION "(c) 180322 dg9dw    "
 //              !                    !
 //              +--------------------+
 
@@ -50,8 +50,8 @@
 // to be most flexible we define a protocol version
 //   a client should tolerate minor changes
 //   a client may abort on major changes
-#define MAJOR 1
-#define MINOR 4
+#define MAJOR 2
+#define MINOR 1
 
 #include <dcf77.h>
 #include <Wire.h>
@@ -91,6 +91,8 @@ RTC_DS1307 rtc;
 boolean rtcUpdateNeeded = true;
 boolean rtcOK = false;
 #endif
+
+boolean fullDate;
 
 uint8_t ledpin(const uint8_t led) { //v3
   return led; //v3
@@ -177,10 +179,10 @@ const LCDField timePos   = {  0, 0,  9};
 const LCDField secPos    = {  6, 0,  3};
 const LCDField datePos   = {  9, 0,  8};
 const LCDField wdayPos   = {  0, 1, 13};
-const LCDField StatusPos = {  0, 2, 20};
-const LCDField DcfStPos  = { 13, 3,  7};
 const LCDField TZPos     = { 16, 1,  4};
+const LCDField StatusPos = {  0, 2, 20};
 const LCDField OMsgPos   = {  0, 3, 16};
+const LCDField DcfStPos  = { 13, 3,  7};
 
 uint8_t sample_input_pin() {
   const uint8_t sampled_data =
@@ -214,47 +216,18 @@ void LCDpaddedPrint(BCD::bcd_t n) {
 }
 
 void PrintSecondTelegram(Clock::time_t n) {
-  Serial.print(F("S"));
-  paddedPrint(n.second);
-  Serial.println(';');
+    int secondsToUTC;
+    DateTime dt (BCD::bcd_to_int(n.year),
+                 BCD::bcd_to_int(n.month),
+                 BCD::bcd_to_int(n.day),
+                 BCD::bcd_to_int(n.hour),
+                 BCD::bcd_to_int(n.minute),
+                 BCD::bcd_to_int(n.second));
+    secondsToUTC = n.uses_summertime ? 7200 : 3600;
+    Serial.print('d');
+    Serial.println(dt.unixtime() - secondsToUTC );
 }
 
-void PrintTelegram(Clock::time_t n) {
-  Serial.print(F("D"));
-  paddedPrint(n.day);
-  SerialSpace();
-  paddedPrint(n.month);
-  SerialSpace();
-  paddedPrint(n.year);
-  
-  SerialSemicolon();
-
-  Serial.print(n.weekday.digit.lo);
-  
-  SerialSemicolon();
-
-  Serial.print(F(" "));
-  paddedPrint(n.hour);
-  SerialSpace();
-  paddedPrint(n.minute);
-  SerialSpace();
-  paddedPrint(n.second);
-  SerialSemicolon();
-
-  uint8_t state = DCF77_Clock::get_clock_state();
-  Serial.print(state == Clock::useless || state == Clock::dirty ? 'f' // not synced
-               : 't'        // good
-              );
-  Serial.print(state == Clock::synced || state == Clock::locked ? 't' // DCF77
-               : 'f'  // crystal clock
-              );
-
-  Serial.print(n.uses_summertime ? '2' : '1');
-  Serial.println(n.timezone_change_scheduled ? '!' :
-                 n.leap_second_scheduled ?     'A' :
-                 '.'
-                );
-}
 // **********************
 #ifdef GERMAN
 char * getMonthName(int mon) {
@@ -331,57 +304,35 @@ void freqadj() {
   lcd.print(16000000L - Internal::Generic_1_kHz_Generator::read_adjustment());
   lcd.print(F(" Hz "));
 }
-/*
-void SerialShowRtcDate(const DateTime& dt) {
-    Serial.print(' ');
-    Serial.print(dt.year(), DEC);
-    Serial.print('/');
-    Serial.print(dt.month(), DEC);
-    Serial.print('/');
-    Serial.print(dt.day(), DEC);
-    Serial.print(' ');
-    Serial.print(dt.hour(), DEC);
-    Serial.print(':');
-    Serial.print(dt.minute(), DEC);
-    Serial.print(':');
-    Serial.print(dt.second(), DEC);
-    
-    Serial.print(" = ");
-    Serial.print(dt.unixtime());
-    Serial.print("s / ");
-    Serial.print(dt.unixtime() / 86400L);
-    Serial.print("d since 1970");
-    Serial.println();
-}
-*/
 
 void PrintRTCTelegram() {
   DateTime n = rtc.now();
-  
-  Serial.print('R');
-  if ( n.day() < 10 ) Serial.print('0');
-  Serial.print(n.day());
-  SerialSpace();
-  if ( n.month() < 10 ) Serial.print('0');
-  Serial.print(n.month());
-  SerialSpace();
-  Serial.print(n.year()-2000);
-  SerialSemicolon();
-  Serial.print(n.dayOfTheWeek());
-  SerialSemicolon();
-  SerialSpace();
-  if ( n.hour() < 10 ) Serial.print('0');
-  Serial.print(n.hour());
-  SerialSpace();
-  if ( n.minute() < 10 ) Serial.print('0');
-  Serial.print(n.minute());
-  SerialSpace();
-  if ( n.second() < 10 ) Serial.print('0');
-  Serial.print(n.second());
-  SerialSemicolon();
-  Serial.println();
   Serial.print('r');
   Serial.println(n.unixtime());
+}
+
+void lcdRTCTime() {
+  DateTime n = rtc.now();
+
+  lcd.blank(StatusPos);
+  lcd.Menpos(StatusPos);
+  if ( n.hour() < 10 ) lcd.zero();
+  lcd.print(n.hour());
+  lcd.print(':');
+  if ( n.minute() < 10 ) lcd.zero();
+  lcd.print(n.minute());
+  lcd.print(':');
+  if ( n.second() < 10 ) lcd.zero();
+  lcd.print(n.second());
+  lcd.space();
+  if ( n.day() < 10 ) lcd.space();
+  lcd.print(n.day());
+  lcd.print('.');
+  if ( n.month() < 10 ) lcd.zero();
+  lcd.print(n.month());
+  lcd.print('.');
+  lcd.space();
+  lcd.print(n.year());
 }
 
 void SyncDCF() {
@@ -413,6 +364,10 @@ void SyncDCF() {
     lcd.setCursor(14, 3); //Start at character 0 on line 0
     leadzero(count%60);
     ++count;
+    if ( displayClearFlag ) {
+      lcdRTCTime();
+      PrintRTCTelegram();
+    }
     if (!(count % 60))
     {
       count = 0;
@@ -556,16 +511,10 @@ void loop() {
 
     // ****************
 
-    if ( BCD::bcd_to_int(now.second) % 15 ) {
-      PrintSecondTelegram(now);
 #ifdef USERTC
-      if ( !(BCD::bcd_to_int(now.second) % 55) ) {
-        PrintRTCTelegram();
-      }
+    PrintRTCTelegram();
 #endif
-    } else {
-      PrintTelegram(now);
-    }
+    PrintSecondTelegram(now);
 
     // ***********
     // get month & day values
@@ -726,7 +675,10 @@ void loop() {
     //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
     // ****************
-    if ( rtcUpdateNeeded || seconds == 0 ) {
+    if ( (seconds % 15) == 0 ) {
+      fullDate = true;
+    }
+    if ( rtcUpdateNeeded || fullDate ) {
       lcd.Menpos(timePos);
 
       LCDpaddedPrint(now.hour);
@@ -754,10 +706,16 @@ void loop() {
 #ifdef USERTC
     if ( rtcOK && (rtcUpdateNeeded || (   (hours == 19) && (seconds == 22) ) ) ) {
       DateTime rtcdate;
-      Serial.println(days);
-      rtcdate = DateTime(2000+years,months,days,hours,minutes,seconds+1);
-      //SerialShowRtcDate(rtcdate);
-      rtc.adjust(DateTime(rtcdate));
+      int secondsToUTC;
+
+//      Serial.println(days);
+      rtcdate = DateTime(2000+years,months,days,hours,minutes,seconds);
+      if ( now.uses_summertime ) {
+        secondsToUTC = 7200;
+      } else {
+        secondsToUTC = 3600;
+      }
+      rtc.adjust(DateTime(rtcdate.unixtime() - secondsToUTC));
       rtcUpdateNeeded = false;
       Serial.println(F("IRTC set"));
     }
@@ -852,6 +810,13 @@ void loop() {
     case  5: // 20 - 23
     case  6: // 24 - 27
     case  7: // 28 - 31
+    case  8: // 32 - 35
+    case  9: // 36 - 39
+       lcdRTCTime();
+       fullDate = true;
+       break;
+    case 10: // 40 - 43
+    case 11: // 44 - 47
       if ( now.leap_second_scheduled )
       {
 #ifdef GERMAN
@@ -862,10 +827,6 @@ void loop() {
         break;
       }
     // else no leap-second on the way - fall thru
-    case  8: // 32 - 35
-    case  9: // 36 - 39
-    case 10: // 40 - 43
-    case 11: // 44 - 47
     case 12: // 48 - 51
     case 13: // 52 - 55
     case 14: // 56 - 59
